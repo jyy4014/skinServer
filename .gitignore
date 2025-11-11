@@ -35,5 +35,6 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Backend folder (deprecated - use skinServer instead)
+# Backend folder (deprecated - now using Supabase Edge Functions)
 backend/
+skinServer/
