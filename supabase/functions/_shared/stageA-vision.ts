@@ -115,6 +115,108 @@ export function validateImageQuality(imageUrl: string): boolean {
   }
 }
 
+// 이미지 품질 점수 계산 (0.0-1.0)
+// 이미지 크기와 해상도를 기반으로 품질 점수 산출
+function calculateImageQualityScore(imageSizeBytes: number, base64Length: number): number {
+  // 최소 권장 크기: 100KB (너무 작으면 품질 낮음)
+  const minSize = 100 * 1024 // 100KB
+  // 이상적 크기: 1MB 이상
+  const idealSize = 1024 * 1024 // 1MB
+  
+  if (imageSizeBytes < minSize) {
+    // 100KB 미만: 매우 낮은 점수 (0.3-0.5)
+    return Math.max(0.3, imageSizeBytes / minSize * 0.2)
+  } else if (imageSizeBytes < idealSize) {
+    // 100KB ~ 1MB: 선형 증가 (0.5-0.8)
+    return 0.5 + ((imageSizeBytes - minSize) / (idealSize - minSize)) * 0.3
+  } else {
+    // 1MB 이상: 높은 점수 (0.8-1.0), 최대 5MB까지 완전 점수
+    const maxSize = 5 * 1024 * 1024 // 5MB
+    if (imageSizeBytes >= maxSize) {
+      return 1.0
+    }
+    return 0.8 + ((imageSizeBytes - idealSize) / (maxSize - idealSize)) * 0.2
+  }
+}
+
+// 얼굴 감지 점수 계산 (0.0-1.0)
+// masks와 area_pct_by_label을 기반으로 얼굴이 제대로 감지되었는지 판단
+function calculateFaceDetectionScore(
+  masks: Array<{ label: string; x: number; y: number; w: number; h: number }>,
+  areaPctByLabel: Record<string, number>
+): number {
+  // masks가 비어있으면 얼굴 감지 실패
+  if (!masks || masks.length === 0) {
+    console.warn("No masks detected - face may not be visible")
+    return 0.2 // 매우 낮은 점수
+  }
+  
+  // 얼굴 영역이 너무 작으면 감지 실패
+  const totalArea = masks.reduce((sum, mask) => sum + (mask.w * mask.h), 0)
+  // 최소 얼굴 영역: 100x100 픽셀 (가정)
+  const minFaceArea = 100 * 100
+  if (totalArea < minFaceArea) {
+    console.warn(`Face area too small: ${totalArea} pixels (minimum: ${minFaceArea})`)
+    return 0.3
+  }
+  
+  // area_pct_by_label이 비어있거나 합이 너무 작으면 문제
+  const totalAreaPct = Object.values(areaPctByLabel).reduce((sum, val) => sum + val, 0)
+  if (totalAreaPct < 0.01) { // 1% 미만
+    console.warn(`Total detected area too small: ${(totalAreaPct * 100).toFixed(2)}%`)
+    return 0.4
+  }
+  
+  // 정상적인 얼굴 감지: 높은 점수
+  // masks 개수와 영역 비율을 종합
+  const maskCountScore = Math.min(1.0, masks.length / 3) // 최소 3개 이상 masks 권장
+  const areaScore = Math.min(1.0, totalAreaPct * 10) // 10% 이상이면 만점
+  
+  return 0.5 + (maskCountScore * 0.25) + (areaScore * 0.25)
+}
+
+// 최종 confidence 계산
+// 이미지 품질, 얼굴 감지, Gemini API confidence를 종합
+function calculateFinalConfidence(
+  imageQualityScore: number,
+  faceDetectionScore: number,
+  geminiConfidence: number | undefined,
+  imageSizeBytes: number
+): number {
+  // 가중치 설정
+  const weightImageQuality = 0.3 // 이미지 품질 30%
+  const weightFaceDetection = 0.4 // 얼굴 감지 40% (가장 중요)
+  const weightGeminiConfidence = 0.3 // Gemini API confidence 30%
+  
+  // Gemini confidence가 없으면 기본값 사용 (하지만 낮게 설정)
+  const geminiConf = geminiConfidence ?? 0.6
+  
+  // 최종 confidence 계산
+  let finalConfidence = 
+    (imageQualityScore * weightImageQuality) +
+    (faceDetectionScore * weightFaceDetection) +
+    (geminiConf * weightGeminiConfidence)
+  
+  // 이미지가 너무 작으면 추가 페널티
+  if (imageSizeBytes < 50 * 1024) { // 50KB 미만
+    finalConfidence *= 0.7
+    console.warn("Image too small, applying penalty to confidence")
+  }
+  
+  // 최소값 보장 (너무 낮으면 0.2)
+  finalConfidence = Math.max(0.2, finalConfidence)
+  // 최대값 제한
+  finalConfidence = Math.min(1.0, finalConfidence)
+  
+  console.log("=== Confidence Calculation ===")
+  console.log(`Image Quality Score: ${(imageQualityScore * 100).toFixed(1)}%`)
+  console.log(`Face Detection Score: ${(faceDetectionScore * 100).toFixed(1)}%`)
+  console.log(`Gemini API Confidence: ${(geminiConf * 100).toFixed(1)}%`)
+  console.log(`Final Confidence: ${(finalConfidence * 100).toFixed(1)}%`)
+  
+  return finalConfidence
+}
+
 // 단계 A: Vision AI 분석
 export async function analyzeVision(
   imageUrl: string,
@@ -137,41 +239,61 @@ export async function analyzeVision(
 
   // Google Gemini API 호출 (REST API 직접 사용)
   let imageData: { base64: string; mimeType: string }
+  let imageSizeBytes: number = 0
   try {
     imageData = await fetchImageAsBase64(imageUrl)
+    // Base64 길이로 원본 이미지 크기 추정 (Base64는 약 33% 더 큼)
+    imageSizeBytes = Math.round(imageData.base64.length / 1.33)
+    console.log(`Image size estimated: ${Math.round(imageSizeBytes / 1024)}KB (from base64 length: ${imageData.base64.length})`)
   } catch (error) {
     console.error("Failed to fetch image:", error)
     throw new Error(`이미지를 가져올 수 없습니다: ${error instanceof Error ? error.message : String(error)}`)
   }
 
   // 프롬프트 구성
-  const prompt = `Analyze the provided face image. Detect presence and severity (0.0-1.0) for:
-- pigmentation (색소 침착)
-- acne (여드름)
-- redness (홍조)
-- enlarged_pores (모공)
-- wrinkles (주름)
+  const prompt = `You are an AI vision model for cosmetic skin analysis (non-medical).
 
-Return JSON only with the following structure:
+### Task
+1. Detect if the image has **exactly one clear human face**.
+   Reject if:
+   - No or multiple faces
+   - Blurred, cartoon, or filtered image
+   - Poor lighting or <50% visible face
+
+If rejected, return:
 {
-  "skin_condition_scores": {
-    "pigmentation": 0.0-1.0,
-    "acne": 0.0-1.0,
-    "redness": 0.0-1.0,
-    "pores": 0.0-1.0,
-    "wrinkles": 0.0-1.0
-  },
-  "masks": [
-    {"label": "pigmentation", "x": 0, "y": 0, "w": 100, "h": 100}
-  ],
-  "metrics": {
-    "area_pct_by_label": {"pigmentation": 0.11, "acne": 0.02}
-  },
-  "confidence": 0.0-1.0,
-  "uncertainty_estimate": 0.0-1.0
+  "status": "rejected",
+  "reason": "no_valid_face_detected",
+  "message_ko": "분석 가능한 얼굴이 감지되지 않았습니다. 밝은 곳에서 정면으로 다시 촬영해 주세요.",
+  "confidence": 0.0
 }
 
-Do not include any medical advice or recommendations.`
+2. If valid, analyze:
+   - pigmentation, acne, redness, pores, wrinkles  
+   Each has score 0.0–1.0 and confidence 0.0–1.0.
+
+### Output (JSON only)
+{
+  "status": "success",
+  "face_detected": true,
+  "skin_condition_scores": {
+    "pigmentation": {"score":0.4,"confidence":0.8},
+    "acne": {"score":0.2,"confidence":0.7},
+    "redness": {"score":0.5,"confidence":0.8},
+    "pores": {"score":0.4,"confidence":0.8},
+    "wrinkles": {"score":0.3,"confidence":0.9}
+  },
+  "metrics": {
+    "lighting_quality":"normal",
+    "area_pct_by_label":{"pigmentation":0.12,"acne":0.03}
+  },
+  "confidence":0.83,
+  "uncertainty_estimate":0.12
+}
+
+Do not include treatment or medical advice.
+
+`
 
   try {
     // Gemini REST API 호출 (표준 라이브러리 사용)
@@ -321,6 +443,28 @@ Do not include any medical advice or recommendations.`
              console.log("Parsed JSON keys:", Object.keys(parsed))
              console.log("Full parsed JSON:", JSON.stringify(parsed, null, 2))
 
+      // 이미지 품질 점수 계산
+      const imageQualityScore = calculateImageQualityScore(imageSizeBytes, imageData.base64.length)
+      
+      // 얼굴 감지 점수 계산
+      const masks = parsed.masks || []
+      const areaPctByLabel = parsed.metrics?.area_pct_by_label || {}
+      const faceDetectionScore = calculateFaceDetectionScore(masks, areaPctByLabel)
+      
+      // Gemini API confidence (있는 경우)
+      const geminiConfidence = parsed.confidence
+      
+      // 최종 confidence 계산
+      const finalConfidence = calculateFinalConfidence(
+        imageQualityScore,
+        faceDetectionScore,
+        geminiConfidence,
+        imageSizeBytes
+      )
+      
+      // Uncertainty는 confidence의 반대 개념으로 계산 (confidence가 낮으면 uncertainty 높음)
+      const finalUncertainty = Math.max(0.0, Math.min(1.0, 1.0 - finalConfidence))
+      
       analysis = {
         skin_condition_scores: {
           pigmentation: parsed.skin_condition_scores?.pigmentation ?? 0,
@@ -329,14 +473,14 @@ Do not include any medical advice or recommendations.`
           pores: parsed.skin_condition_scores?.pores ?? 0,
           wrinkles: parsed.skin_condition_scores?.wrinkles ?? 0,
         },
-        masks: parsed.masks || [],
+        masks: masks,
         metrics: {
-          area_pct_by_label: parsed.metrics?.area_pct_by_label || {},
+          area_pct_by_label: areaPctByLabel,
           color_deltaE: parsed.metrics?.color_deltaE,
         },
-        confidence: parsed.confidence ?? 0.8,
-        uncertainty_estimate: parsed.uncertainty_estimate ?? 0.2,
-              model_version: "vision-v1-gemini-2.5-pro",
+        confidence: finalConfidence,
+        uncertainty_estimate: finalUncertainty,
+        model_version: "vision-v1-gemini-2.5-pro",
       }
     } catch (parseError) {
       console.error("Failed to parse Gemini response:", parseError)

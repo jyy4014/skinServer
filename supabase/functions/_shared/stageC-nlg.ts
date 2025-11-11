@@ -8,6 +8,10 @@ export interface NLGResult {
     label: string
     url: string
   }
+  treatment_suggestions?: Array<{
+    label: string
+    methods: string[]
+  }>
   nlg_version?: string
 }
 
@@ -84,40 +88,51 @@ export async function generateUserText(
   const { confidence, uncertainty_estimate } = visionResult
   const { treatment_candidates } = mappingResult
 
-  const prompt = `You are a friendly, concise medical-adjacent assistant for cosmetic guidance (non-medical).
+  // 입력 데이터 요약 (프롬프트 길이 제한을 위해)
+  const topIssues = Object.entries(visionResult.skin_condition_scores)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3)
+    .map(([key, value]) => `${key}: ${(value * 100).toFixed(0)}%`)
+    .join(', ')
 
-Input JSON:
-{
-  "skin_summary": "${skinSummary}",
-  "treatment_candidates": ${JSON.stringify(treatment_candidates)},
-  "confidence": ${confidence},
-  "uncertainty": ${uncertainty_estimate},
-  "user_profile": ${JSON.stringify(userProfile)}
-}
+  const topTreatments = treatment_candidates
+    .slice(0, 3)
+    .map(t => t.name)
+    .join(', ')
 
-Generate a JSON output with the following structure:
+  const prompt = `You are a friendly Korean-language assistant for cosmetic skin info (non-medical).
+
+Input:
+- Skin summary: ${skinSummary}
+- Top issues: ${topIssues}
+- Confidence: ${(confidence * 100).toFixed(0)}%
+- Uncertainty: ${(uncertainty_estimate * 100).toFixed(0)}%
+- Recommended treatments: ${topTreatments}
+
+Output JSON format:
 {
-  "headline": "한국어 헤드라인 (참고용 안내 포함)",
+  "headline": "피부 상태 요약 (한국어, 1문장)",
   "paragraphs": [
-    "이미지 분석 결과 설명 (신뢰도 포함)",
-    "비교적 자주 선택되는 옵션 설명",
-    "주의사항 (의료 진단 아님 명시)"
+    "분석 결과 요약 (한국어, 2-3문장).",
+    "일반적인 케어 옵션 또는 습관 (비의료적).",
+    "주의사항: 본 설명은 의료 진단이 아니며, 시술 전 전문의 상담을 권장합니다."
   ],
-  "cta": {
-    "label": "전문가 상담 요청",
-    "url": "/consult"
-  }
+  "treatment_suggestions": [
+    {"label": "홍조 완화", "methods": ["쿨링 진정 케어", "약산성 클렌징"]},
+    {"label": "모공 관리", "methods": ["가벼운 각질 제거", "유분 밸런스 조절"]}
+  ],
+  "cta": {"label": "전문가 상담 요청", "url": "/consult"}
 }
 
 Rules:
-- Use NO words that sound like a medical prescription ("prescribe", "diagnose", "treat" used as command).
-- Use "informational", "commonly chosen", "may help", "consider consulting" instead.
-- Always include disclaimer: "본 설명은 의료 진단이 아니며, 시술 전 전문의 상담을 권장합니다."
-- If uncertainty > 0.4, include "전문가 검토를 고려해보세요" and make reviewer CTA prominent.
-- Use friendly, natural Korean language.
+- Use Korean language only.
+- If uncertainty > 40%, add to paragraphs: "분석 불확실성이 다소 높아 전문가 검토를 권장합니다."
+- treatment_suggestions should be based on skin issues (pigmentation, acne, redness, pores, wrinkles).
 - Keep paragraphs concise (2-3 sentences each).
+- Always include the disclaimer paragraph.
 
-Output ONLY JSON, no markdown, no code blocks.`
+Output strictly JSON only (no markdown, no code blocks).
+`
 
   try {
     console.log("Calling Gemini API for NLG...")
@@ -234,6 +249,7 @@ Output ONLY JSON, no markdown, no code blocks.`
           label: "전문가 상담 요청",
           url: "/consult",
         },
+        treatment_suggestions: parsed.treatment_suggestions || undefined,
       }
 
       if (uncertainty_estimate > 0.4) {
