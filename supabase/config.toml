@@ -1,0 +1,8 @@
+# Supabase Edge Functions 설정
+
+[functions.analyze]
+verify_jwt = false
+
+[functions.update-trends]
+verify_jwt = false
+

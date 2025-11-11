@@ -1,0 +1,361 @@
+---
+alwaysApply: true
+---
+
+프런트는 디자인 시스템 + 강한 타입(Typescript) + 명확한 상태 관리(React Query) + 서버 분리(Edge Functions) + 견고한 UX 흐름(온보딩→업로드→결과→히스토리) + 보안/접근성/테스트로 구성해야 프로처럼 보입니다.
+
+1. 변경/개선 우선순위 (빠르게 개선할 것부터)
+프로젝트 구조 정리 + 디자인 시스템 도입 (Tokens, 버튼, 카드)
+
+업로드 흐름을 안전·견고하게: signed URL 발급 → client upload → analyze 호출 → 상태 관리(React Query)
+
+명확한 타입 정의 (API contract + local types)
+
+이미지 전처리(클라이언트 리사이즈 + WebWorker 옵션) — 성능/비용 절감
+
+UX 강화: 업로드 진행도, 품질 피드백(조명/blur), 오류/재시도, accessibility
+
+테스트: unit + e2e (Playwright) + CI 자동화
+
+모니터링/분석: Sentry, analytics, performance metrics
+
+2. 권장 폴더 구조 (가독성·확장성 중심)
+🧭 전체 앱 정보 구조 (IA) — 확장형 완성 버전
+🏠 Home (홈)
+├─ 오늘의 분석 요약
+├─ 최근 AI 결과 하이라이트
+├─ “새로운 분석 시작하기” CTA
+├─ 추천 시술 미리보기 (3개)
+└─ 알림 / 배너 (공지사항, 업데이트)
+
+📸 Analyze (분석)
+├─ 사진 업로드 / 촬영
+├─ 분석 진행
+└─ 결과 보기 (문제점 + 시술 추천)
+
+📊 History (기록)
+├─ 분석 기록 리스트
+├─ 그래프 (주간, 월간 변화)
+└─ 상세 비교 (Before / After)
+
+💬 Treatments (시술 추천)
+├─ AI 추천 시술 전체 보기
+├─ 시술별 설명 / 장단점 / 평균 효과
+└─ 병원 상담 연결(미구현 / 관심등록)
+
+👤 Profile (프로필)
+├─ 내 정보 보기 (이메일, 이름)
+├─ 개인정보 동의 및 삭제 요청
+├─ 비밀번호 변경
+└─ 로그아웃
+
+⚙️ Settings (설정)
+├─ 알림 설정 (푸시, 이메일)
+├─ 다크모드 / 언어 설정
+├─ 서비스 약관 / 개인정보처리방침
+└─ 버전 정보 / 문의하기
+🏗️ 추천 앱 구조 (React + Supabase 기준)
+
+
+📂 프로젝트 구조 예시
+app/
+├─ components/
+│  ├─ common/
+│  │  ├─ Header.tsx
+│  │  ├─ BottomNav.tsx
+│  │  └─ Modal.tsx
+│  ├─ analysis/
+│  │  ├─ UploadCard.tsx
+│  │  ├─ ResultCard.tsx
+│  │  └─ ProgressLoader.tsx
+│  ├─ history/
+│  │  ├─ HistoryList.tsx
+│  │  └─ GraphView.tsx
+│  ├─ home/
+│  │  ├─ DailySummary.tsx
+│  │  └─ QuickAnalyze.tsx
+│  └─ settings/
+│     ├─ NotificationToggle.tsx
+│     └─ PolicyViewer.tsx
+│
+├─ pages/
+│  ├─ Home.tsx
+│  ├─ Analyze.tsx
+│  ├─ History.tsx
+│  ├─ Treatments.tsx
+│  ├─ Profile.tsx
+│  └─ Settings.tsx
+│
+├─ hooks/
+│  ├─ useSupabase.ts
+│  ├─ useAIAnalysis.ts
+│  └─ useAuth.ts
+│
+├─ lib/
+│  ├─ supabaseClient.ts
+│  └─ api.ts (Edge Function endpoints)
+│
+└─ App.tsx
+3. 디자인 시스템 (필수)
+Tokens: 색상, 폰트스케일, radius, spacing → design-tokens.ts
+
+Atomic UI: Button, Input, Modal, Card, Toast, Icon — 재사용성 · 접근성 확보
+
+Theme / Dark mode: CSS variables + Tailwind config
+
+Accessibility: keyboard focus, aria- labels, contrast ratio
+
+이걸 안하면 앱이 “허접”하게 보입니다. 디자인 시스템은 UI 일관성 + 빠른 페이지 제작의 핵심입니다.
+
+4. 상태 관리 & 데이터 페칭
+React Query (TanStack Query) 추천: 캐싱, 재시도, 옵티미스틱 업데이트, polling, background refetch.
+
+용도:
+
+Upload job: useMutation for getUploadUrl, upload, analyze call
+
+Results & history: useQuery with pagination
+
+Background refresh for review queue
+
+장점: 에러/로딩/성공 상태를 API 레이어와 분리해서 UX 일관성 유지.
+
+5. 타입(계약) — src/types/index.ts
+export type User = { id: string; email: string; name?: string };
+
+export type AnalysisMask = { label: string; x: number; y: number; w: number; h: number };
+
+export type AnalysisMetrics = {
+  area_pct_by_label: Record<string, number>;
+  color_deltaE?: number;
+  redness_index?: number;
+};
+
+export type AnalysisResult = {
+  id: string;
+  user_id: string;
+  image_id?: string;
+  storage_path: string;
+  skin_condition_scores: Record<string, number>;
+  masks?: AnalysisMask[];
+  metrics?: AnalysisMetrics;
+  confidence: number;
+  uncertainty: number;
+  model_version?: string;
+  created_at: string;
+};
+
+export type TreatmentCandidate = {
+  id: string;
+  name: string;
+  score: number; // 0-1
+  expected_improvement_pct?: number;
+  notes?: string[];
+};
+이 타입은 모든 컴포넌트·훅에서 공통으로 사용합니다. API가 변경되면 이 파일만 고치면 됩니다.
+
+6. 핵심 UX 흐름 (시퀀스)
+Onboarding (consent toggles) → sets consentGiven=true in user profile (DB or local)
+
+UploadForm:
+
+Choose/camera take photo → client-side checks (MIME/size) → preview
+
+Client-side resize/compress + quick quality check (Laplacian blur)
+
+Submit:
+
+POST /api/getUploadUrl with filename → returns {uploadUrl, storagePath}
+
+PUT to uploadUrl (fetch/axios) with progress events → show progress bar
+
+POST /api/analyze { storagePath } → returns analysisResult (or jobId)
+
+If long: return jobId; poll GET /api/results/{id} or use Realtime
+
+Show ResultView:
+
+image thumbnail + heatmap overlay (toggle)
+
+summary scores + bar chart per condition
+
+recommended treatments list with expand for description + CTA
+
+buttons: Save, Request review (if low confidence), Delete
+
+History:
+
+server-side pagination, lazy load images (skeletons), delete action triggers deleteImage API and invalidates query
+
+7. 업로드 + 분석: 견고한 훅 예시 useUploadFlow.ts (React + React Query)
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../lib/supabaseClient';
+import api from '../lib/api';
+import { AnalysisResult } from '../types';
+
+async function uploadToSignedUrl(uploadUrl: string, file: File, onProgress?: (p: number) => void) {
+  // Use fetch with XHR-like progress via XMLHttpRequest for PUT progress
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl);
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(xhr.statusText)));
+    xhr.onerror = () => reject(new Error('Upload failed'));
+    xhr.upload.onprogress = (e) => onProgress?.(Math.round((e.loaded / e.total) * 100));
+    xhr.send(file);
+  });
+}
+
+export function useUploadFlow() {
+  const qc = useQueryClient();
+
+  const getUrlMut = useMutation((filename: string) => api.post('/api/getUploadUrl', { filename }));
+  const analyzeMut = useMutation((payload: { storagePath: string }) => api.post<AnalysisResult>('/api/analyze', payload), {
+    onSuccess: () => qc.invalidateQueries(['history'])
+  });
+
+  async function startUpload(file: File, onProgress?: (p: number) => void) {
+    const filename = file.name;
+    const { data } = await getUrlMut.mutateAsync(filename);
+    await uploadToSignedUrl(data.uploadUrl, file, onProgress);
+    const res = await analyzeMut.mutateAsync({ storagePath: data.storagePath });
+    return res;
+  }
+
+  return { startUpload, getUrlMut, analyzeMut };
+}
+핵심: 명확한 에러 핸들링, 재시도 정책(React Query) 및 로딩/진행도 관리.
+
+8. 이미지 전처리 (성능/비용 중요)
+Use client-side resizing + convert to WebP when supported
+
+Offload heavy resize to WebWorker to avoid blocking main thread
+
+Provide useImageResizeWorker hook and image.ts util
+
+Example approach: create <canvas> scaled to 1024px and toBlob('image/webp', 0.85)
+
+이렇게 하면 네트워크 비용과 엔드포인트 처리 비용(외부 API 호출) 절감.
+
+9. Error UX, Retries, Fallbacks
+에러 분류: validation (client) / network / server / model error
+
+각 에러에 맞는 UI:
+
+validation: inline error (file too large)
+
+network: toast + auto retry (exponential backoff)
+
+server/model: show friendly message + offer “Try again” / “Contact support”
+
+For model errors: fallback to templated safe message (no analysis) to avoid blank screen.
+
+10. Security & Privacy on Front
+Never store service_role keys on client. Only use anon key.
+
+Use short TTL signed URL for direct uploads.
+
+Images: remove EXIF on client before upload.
+
+Enforce consent: block getUploadUrl until consent toggled.
+
+Use App Check or similar (Supabase has fewer options; consider recaptcha on upload to reduce abuse).
+
+11. Accessibility (A11y)
+Modal: trap focus, ESC close
+
+Buttons and inputs: aria-label, roles
+
+Color contrast: ensure >4.5:1
+
+Keyboard flows: all interactive items usable by keyboard
+
+Screen reader texts for heatmap overlays and analysis summary
+
+12. Testing
+Unit tests: Jest + React Testing Library for components + hooks
+
+Integration: MSW (Mock Service Worker) to mock API during UI tests
+
+E2E: Playwright for flows: onboarding→upload→analyze→result→delete
+
+Accessibility tests: axe-core in CI
+
+Example CI step (GitHub Actions):
+
+install → lint → run unit tests → build → run E2E in preview environment → deploy to Vercel on success
+
+13. Observability & Analytics
+Sentry (errors) + performance traces (slow uploads, analyze latency)
+
+User events: upload start/complete, analyze success/failure, request_review clicks (use segment/GA4)
+
+Model metrics: confidence distributions logged (but PII-free)
+
+14. Polished Result UI suggestions (professional look)
+Top summary bar: big % score + color-coded badge (Good / Needs attention / High priority)
+
+Radar chart or horizontal bars for condition scores
+
+Heatmap overlay slider (before/after opacity)
+
+Treatment cards: icon, short description, “Why this appears for you” (one-line), expected improvement % badge
+
+CTA aligned to result: “Book consult”, “Save to history”, “Share (with caution)”
+
+Small UI polish yields big trust gains.
+
+15. Sample Result component skeleton (React + Tailwind)
+import React from 'react';
+import { AnalysisResult, TreatmentCandidate } from '../types';
+
+export default function ResultView({ result }: { result: AnalysisResult }) {
+  return (
+    <div className="max-w-3xl mx-auto p-4">
+      <div className="flex items-center gap-4">
+        <img src={result.signed_thumbnail_url} alt="analysis thumbnail" className="w-28 h-28 rounded-md object-cover" />
+        <div>
+          <h2 className="text-xl font-semibold">분석 요약</h2>
+          <p className="text-sm text-gray-600">신뢰도 {Math.round(result.confidence * 100)}%</p>
+        </div>
+      </div>
+
+      {/* Scores */}
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        {Object.entries(result.skin_condition_scores).map(([k, v]) => (
+          <div key={k} className="p-3 border rounded">
+            <div className="flex justify-between">
+              <span className="capitalize">{k.replace('_', ' ')}</span>
+              <span className="font-semibold">{Math.round(v * 100)}%</span>
+            </div>
+            <div className="h-2 bg-gray-200 rounded mt-2">
+              <div className="h-2 bg-amber-400 rounded" style={{ width: `${v * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recommendations */}
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold">자주 선택되는 옵션</h3>
+        {/* Map to treatment cards */}
+      </div>
+    </div>
+  );
+}
+16. Deployment & Release
+Front build: Vercel (Preview deployments for PRs)
+
+Backend: Supabase Functions + DB migrations
+
+Use feature flags (LaunchDarkly or simple flagging) to roll out new NLG prompts or mapping rules
+
+17. Deliverables I will produce if you want me to (pick any/all)
+Full frontend scaffold (folder tree) with sample components, hooks, and types above
+
+useUploadFlow and useAnalysis implementations wired to mock backend
+
+WebWorker resize example and image utility functions
+
+Playwright e2e tests for the upload→analyze→result happy path
+
+CI YAML (GitHub Actions) + README with local dev steps

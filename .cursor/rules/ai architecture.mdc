@@ -1,0 +1,254 @@
+---
+alwaysApply: true
+---
+
+
+
+개요: 3단계 멀티-AI 파이프라인
+Vision AI (단계 A) — 사진에서 문제(클래스) 탐지 + 정량화(퍼센트/점수) + 마스크/좌표
+
+Mapping AI / Rules (단계 B) — 탐지된 문제를 개선 가능한 시술 리스트로 매핑(통계·규칙 혼합)
+
+NLG AI (단계 C) — 사용자에게 전달할 친절·비의료 문구(설명, 주의사항, 권장 조치) 생성
+
+각 단계는 독립 모델(또는 서비스)로 운영되며 Edge Function이 오케스트레이터 역할을 합니다.
+
+전체 흐름 (한줄 요약)
+사용자 업로드 → 서버가 이미지 저장 → Edge Function 순차 호출: A → B → C → DB 저장 및 응답 → (조건부) H-I-T-L(의사검토) 큐
+
+1) 단계 A — 사진 분석 (Vision AI)
+목적: 피부 문제 항목(예: pigmentation, acne, redness, pores, wrinkles 등)을 탐지하고, 각 항목별 심각도 점수(0~1) 또는 **영역 비율(%)**을 산출한다. heatmap/마스크도 포함.
+
+권장 접근
+
+PoC: 외부 API (OpenAI Vision / Replicate / Hugging Face Inference) 또는 경량 자체 모델
+
+Prod: 자체 호스팅(Cloud Run/Vertex/AKS)으로 전환 권장
+
+입력
+
+{
+  "storage_path": "private-uploads/{userId}/...jpg",
+  "user_id": "uuid",
+  "meta": {"camera":"iPhone12", "orientation":0}
+}
+출력 (표준화)
+
+{
+  "skin_condition_scores": {
+    "pigmentation": 0.72,
+    "acne": 0.12,
+    "redness": 0.08,
+    "pores": 0.45,
+    "wrinkles": 0.05
+  },
+  "masks": [
+    {"label":"pigmentation","x":120,"y":140,"w":80,"h":90},
+    ...
+  ],
+  "metrics": {
+    "area_pct_by_label": {"pigmentation":0.11, "acne":0.02},
+    "color_deltaE": 5.2
+  },
+  "confidence": 0.84,
+  "uncertainty_estimate": 0.16,
+  "model_version": "vision-v1",
+  "heatmap_url": "https://.../heatmap.jpg"
+}
+프롬프트 / 요청 템플릿 (OpenAI-like)
+
+If using an image-capable LLM (e.g., gpt-image-1 style) or custom HF model, the server sends either image bytes or signed URL along with a short instruction.
+
+Instruction:
+"Analyze the provided face image. Detect presence and severity (0.0-1.0) for:
+- pigmentation, acne, redness, enlarged_pores, wrinkles.
+Return JSON only with keys: skin_condition_scores, masks (x,y,w,h), metrics, confidence, uncertainty_estimate."
+Note: if using REST HF, you send bytes and parse the response into the format above.
+
+검증
+
+Laplacian blur check before sending (client or server)
+
+If confidence < 0.3 or uncertainty > 0.5 → mark for review or fallback to light rule-based estimation.
+
+2) 단계 B — 문제 → 시술 매핑 (Mapping AI + Rules)
+목적: 단계 A의 정량화 결과를 받아서 개선 가능한 시술 목록을 산출하고 각 시술에 대해 예상 효과(예상 개선률/우선순위%)를 매긴다. 여기서는 의료 용어 사용 금지 및 권고 대신 ‘정보’ 표기 규칙을 엄격 적용.
+
+설계 원칙
+
+Hybrid: 룰 기반 필터(안전성/금기) + 통계 기반 가중치(유사 케이스 통계 혹은 간단 ML)
+
+비의료성 문구 유지: “권장” 대신 “자주 선택되는 옵션”, “참고용” 등 표현 사용
+
+입력
+
+{
+  "user_id":"uuid",
+  "skin_condition_scores": {...},   // output from A
+  "metrics": {...},
+  "user_profile": {"age":32,"skin_tone":"Fitzpatrick III"},
+  "consent_for_research": false
+}
+출력
+
+{
+  "treatment_candidates": [
+    {"id":"laser_toning","name":"Laser Toning","score":0.62,"expected_improvement_pct": 0.25, "notes":["good for superficial pigmentation"]},
+    {"id":"chemical_peel","name":"Chemical Peel","score":0.45,"expected_improvement_pct":0.15, "notes":[]}
+  ],
+  "mapping_version":"map-v1",
+  "applied_rules":["no_heavy_laser_if_recent_scar"]
+}
+구현 옵션
+
+Rule engine (JS rules or small Drools-like) to reject unsafe combos (e.g., pregnancy, recent isotretinoin use → block laser)
+
+Lightweight ML: train a small XGBoost on historic cases (features: scores, area_pct, age, skin_tone) to output ranking score.
+
+If no history data, use a deterministic weight table.
+
+프롬프트 템플릿 (대체: NLG-free approach)
+
+Prefer deterministic mapping in this step to keep explainability. But if you want an LLM to help rank:
+
+"Input: {skin_condition_scores, metrics, user_profile}. Output: JSON array of candidate cosmetic procedures with 'id','name','score'(0-1), 'expected_improvement_pct'(0-1), 'safety_notes'. Use conservative choices and never use 'diagnose' or 'prescribe'."
+검증
+
+If any candidate has safety_notes containing high-risk flags, set status='needs-medical-clearance'
+
+If sum(scores) < threshold (i.e., very low overall severity), return empty list with message "No clear cosmetic options recommended; skin appears generally healthy."
+
+3) 단계 C — 사용자 친화 문구 생성 (NLG AI)
+목적: 단계 B의 후보를 받아 사용자 친화적, 법적으로 안전한 설명 문장을 생성한다. 여기는 대형 LLM(예: OpenAI GPT family, Anthropic, or GPT-5-like) 사용 권장.
+
+입력
+
+{
+  "skin_summary": "pigmentation predominant on cheeks",
+  "treatment_candidates": [
+    {"id":"laser_toning","name":"Laser Toning","score":0.62,"expected_improvement_pct":0.25,"notes":["good for superficial pigmentation"]},
+    ...
+  ],
+  "confidence": 0.84,
+  "uncertainty": 0.16,
+  "user_profile": {...}
+}
+출력 (예시 텍스트 components)
+
+{
+  "headline":"중앙 볼 부위에 색소가 확인됩니다 — 참고용 안내",
+  "paragraphs":[
+    "이미지 분석 결과, 색소성 문제(pigmentation)가 상대적으로 뚜렷하게 나타났습니다. (신뢰도 84%)",
+    "비교적 자주 선택되는 옵션: Laser Toning — 표면 색소 개선에 자주 사용됩니다. (참고: 평균 개선 기대치 약 20~30%)",
+    "주의: 본 설명은 의료 진단이 아니며, 시술 전 전문의 상담을 권장합니다."
+  ],
+  "cta": {"label":"전문가 상담 요청","url":"https://..."}
+}
+프롬프트 템플릿 (구체적 예시 — OpenAI GPT)
+
+You are a friendly, concise medical-adjacent assistant for cosmetic guidance (non-medical). 
+Input JSON: {skin_summary, treatment_candidates, confidence, uncertainty, user_profile}.
+Generate a JSON output with: headline, paragraphs[], cta.
+Rules:
+- Use no words that sound like a medical prescription ("prescribe", "diagnose", "treat" used as command). Use "informational", "commonly chosen", "may help".
+- Always include disclaimer: "This is informational and not a medical diagnosis."
+- If uncertainty > 0.4, include "Consider professional review" and make reviewer CTA prominent.
+Output only JSON.
+템플릿 주의: enforce the banned-words list; LLM can be instructed to refuse using them.
+
+Orchestration: Edge Function (pseudo-flow)
+Edge Function analyzeOrchestrator does:
+
+Validate JWT, check consent.
+
+If client provided storagePath, download image bytes (service role) and run quick quality checks.
+
+Call Stage A Vision API (await or enqueue). Receive analysisA.
+
+Call Stage B mapping function (local rule engine or call Mapping AI). Receive mappingB.
+
+Call Stage C NLG LLM with mappingB + analysisA for user text. Receive nlgC.
+
+Insert skin_images row (if not present), insert analysis_results with full payload {analysisA, mappingB, nlgC}.
+
+If analysisA.uncertainty>threshold or mapping flagged review → insert review_queue row and notify reviewer.
+
+Return standardized JSON to client (include signed short-lived heatmap URL).
+
+Asynchronous option: Make A async (return job id) and notify via Realtime or Webhook when C complete — useful if external model latency is high.
+
+JSON: 최종 API 응답 예시
+{
+  "result_id":"uuid",
+  "analysis": { ...analysisA... },
+  "mapping": { ...mappingB... },
+  "nlg": { ...nlgC... },
+  "review_needed": false,
+  "heatmap_signed_url":"https://... (ttl 60s)"
+}
+안전성·법규·UX 규칙(요약)
+금지어 리스트 for all generated UI: "diagnose", "prescribe", "treatment plan", "you must", "you need to" as imperative. Replace with "informational", "commonly chosen", "consider", "consult a specialist".
+
+Mandatory disclaimers in all result screens.
+
+Consent toggles before any call to analyze.
+
+Data retention default 30 days; user-initiated delete immediate + audit log.
+
+Human review gating when uncertainty high.
+
+모니터링·검증·A/B 전략
+Track per-model metrics: accuracy (if labeled set exists), confidence distribution, user conversion (clicked CTA → booked consult)
+
+A/B: compare different mapping weight tables or different NLG tones
+
+Drift detection on skin-tone distribution; retraining triggers if drift beyond threshold.
+
+장애·페일오버 전략
+If external Vision API down:
+
+Fallback #1: run local lightweight heuristic (colour thresholds, simple blob detection) as rough estimator.
+
+Fallback #2: return friendly message "임시 오류 — 다시 시도해 주세요" and log for retry.
+
+If LLM unavailable:
+
+Use static templated phrasing based on mappingB entries (predefined safe templates).
+
+프롬프트 템플릿 모음 (복사해서 바로 사용 가능)
+A. Vision API instruction (for image-capable model)
+Analyze the image at the provided URL. Detect and quantify (0.0-1.0) these issues: pigmentation, acne, redness, enlarged_pores, wrinkles.
+Return JSON only with keys:
+skin_condition_scores: {...}, masks: [{label,x,y,w,h}], metrics:{area_pct_by_label:{...}}, confidence: float, uncertainty_estimate: float
+Do not include any medical advice or recommendations.
+B. Mapping AI (ranking; optional LLM assist)
+Input: JSON with skin_condition_scores, metrics, user_profile.
+Task: Return a JSON array of candidate cosmetic options with fields: id, name, score(0-1), expected_improvement_pct(0-1), safety_notes[].
+Rules: 1) Avoid any medical-prescriptive language. 2) Apply safety rules: if pigmentation < 0.1 then deprioritize lasers.
+Output only JSON.
+C. NLG for user-facing text (LLM)
+You are a helpful cosmetic-info assistant (non-medical). Input JSON: {skin_summary, treatment_candidates, confidence, uncertainty, user_profile}.
+Produce JSON: {headline, paragraphs[], cta:{label,url}}.
+Rules:
+- Include a clear disclaimer sentence.
+- Use non-prescriptive phrasing ("commonly chosen", "consider consulting").
+- If uncertainty > 0.4, advise professional review explicitly.
+Output only JSON.
+개발·배포 실무 팁 (빠르게 적용)
+Start PoC with mock A (filename-based), rule-based B, templated C for fastest dev cycle. Then plug external Vision + LLM later.
+
+Keep versioning: model_version, mapping_version, nlg_prompt_version in DB.
+
+Store raw external API responses (redacted) for auditing.
+
+Test with diverse skin-tone dataset to avoid bias.
+
+샘플 Acceptance Tests
+Upload pigment.jpg → A returns pigmentation score >0.6 → B returns Laser Toning candidate → C produces user text with disclaimer and CTA.
+
+Upload blurry image → quality gate rejects on client or A returns status: bad_quality.
+
+Force mock low-confidence case → result has review_needed:true and a review_queue entry.
+
+API failure of Vision service triggers fallback heuristic and returns safe templated content.
+
