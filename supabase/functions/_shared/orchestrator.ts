@@ -33,7 +33,8 @@ export interface OrchestrationResult {
 }
 
 export interface OrchestrationInput {
-  image_url: string
+  image_urls: string[]  // 3개 이미지 URL 배열
+  image_angles: ('front' | 'left' | 'right')[]  // 각 이미지의 각도
   user_id: string
   user_profile?: UserProfile
   meta?: { camera?: string; orientation?: number }
@@ -42,7 +43,12 @@ export interface OrchestrationInput {
 export async function orchestrateAnalysis(
   input: OrchestrationInput
 ): Promise<OrchestrationResult> {
-  const { image_url, user_id, user_profile = {}, meta } = input
+  const { image_urls, image_angles, user_id, user_profile = {}, meta } = input
+
+  // 유효성 검사
+  if (!image_urls || image_urls.length === 0) {
+    throw new Error("이미지 URL이 필요합니다.")
+  }
 
   const stageMetadata = {
     stage_a: { duration_ms: 0, error: undefined as string | undefined, model_version: undefined as string | undefined },
@@ -57,9 +63,10 @@ export async function orchestrateAnalysis(
   try {
     // 단계 A: Vision AI 분석
     console.log("Step A: Starting vision analysis...")
+    console.log(`Processing ${image_urls.length} images: ${image_angles.join(', ')}`)
     const stageAStart = Date.now()
          try {
-             visionResult = await analyzeVision(image_url, user_id, meta)
+             visionResult = await analyzeVision(image_urls, image_angles, user_id, meta)
              stageMetadata.stage_a.duration_ms = Date.now() - stageAStart
              stageMetadata.stage_a.model_version = visionResult.model_version || "unknown"
              console.log(`Step A: Completed in ${stageMetadata.stage_a.duration_ms}ms`)

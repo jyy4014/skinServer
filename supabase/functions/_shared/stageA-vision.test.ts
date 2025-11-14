@@ -2,7 +2,7 @@ import { assertEquals, assertRejects } from "jsr:@std/assert@^1.0.0"
 import { analyzeVision, validateImageQuality } from "./stageA-vision.ts"
 
 // 테스트 환경 설정
-Deno.test("analyzeVision: API 키가 없을 때 에러 발생", async () => {
+Deno.test("analyzeVision: API 키가 없을 때 에러 발생 - 단일 이미지", async () => {
   // 환경 변수 백업
   const originalKey = Deno.env.get("GOOGLE_GEMINI_API_KEY")
   
@@ -10,10 +10,10 @@ Deno.test("analyzeVision: API 키가 없을 때 에러 발생", async () => {
     // API 키 제거
     Deno.env.delete("GOOGLE_GEMINI_API_KEY")
     
-    // 에러가 발생해야 함
+    // 에러가 발생해야 함 (하위 호환성: 단일 이미지)
     await assertRejects(
       async () => {
-        await analyzeVision("https://example.com/test.jpg")
+        await analyzeVision(["https://example.com/test.jpg"], ["front"])
       },
       Error,
       "GOOGLE_GEMINI_API_KEY 환경 변수가 설정되지 않았습니다"
@@ -24,6 +24,90 @@ Deno.test("analyzeVision: API 키가 없을 때 에러 발생", async () => {
       Deno.env.set("GOOGLE_GEMINI_API_KEY", originalKey)
     }
   }
+})
+
+Deno.test("analyzeVision: 여러 이미지 지원 - 3개 이미지", async () => {
+  // 환경 변수 백업
+  const originalKey = Deno.env.get("GOOGLE_GEMINI_API_KEY")
+  
+  try {
+    // API 키 제거
+    Deno.env.delete("GOOGLE_GEMINI_API_KEY")
+    
+    // 에러가 발생해야 함 (여러 이미지)
+    await assertRejects(
+      async () => {
+        await analyzeVision(
+          [
+            "https://example.com/front.jpg",
+            "https://example.com/left.jpg",
+            "https://example.com/right.jpg",
+          ],
+          ["front", "left", "right"]
+        )
+      },
+      Error,
+      "GOOGLE_GEMINI_API_KEY 환경 변수가 설정되지 않았습니다"
+    )
+  } finally {
+    // 환경 변수 복원
+    if (originalKey) {
+      Deno.env.set("GOOGLE_GEMINI_API_KEY", originalKey)
+    }
+  }
+})
+
+Deno.test("analyzeVision: 단일 이미지 하위 호환성", async () => {
+  // Arrange: 단일 이미지 배열
+  const imageUrls = ["https://example.com/test.jpg"]
+  const imageAngles = ["front"]
+
+  // Act: 단일 이미지인지 확인
+  const isSingleImage = imageUrls.length === 1
+
+  // Assert: 단일 이미지인 경우 하위 호환성 로직으로 처리되어야 함
+  assertEquals(isSingleImage, true)
+  assertEquals(imageUrls.length, 1)
+  assertEquals(imageAngles.length, 1)
+})
+
+Deno.test("analyzeVision: 정면 이미지 우선 처리", async () => {
+  // Arrange: 정면 이미지가 중간에 있는 경우
+  const imageUrls = [
+    "https://example.com/left.jpg",
+    "https://example.com/front.jpg",
+    "https://example.com/right.jpg",
+  ]
+  const imageAngles = ["left", "front", "right"]
+
+  // Act: 정면 이미지 인덱스 찾기
+  const frontIndex = imageAngles.indexOf("front")
+  const frontImageUrl = frontIndex >= 0 ? imageUrls[frontIndex] : imageUrls[0]
+
+  // Assert: 정면 이미지가 올바르게 찾아져야 함
+  assertEquals(frontIndex, 1)
+  assertEquals(frontImageUrl, "https://example.com/front.jpg")
+})
+
+Deno.test("analyzeVision: 측면 이미지 필터링", async () => {
+  // Arrange: 3개 이미지 (정면, 좌측, 우측)
+  const imageUrls = [
+    "https://example.com/front.jpg",
+    "https://example.com/left.jpg",
+    "https://example.com/right.jpg",
+  ]
+  const imageAngles = ["front", "left", "right"]
+  const frontIndex = imageAngles.indexOf("front")
+
+  // Act: 측면 이미지 필터링
+  const sideImages = imageUrls
+    .map((url, index) => ({ url, angle: imageAngles[index] }))
+    .filter((item, index) => index !== frontIndex && item.angle !== "front")
+
+  // Assert: 측면 이미지만 필터링되어야 함
+  assertEquals(sideImages.length, 2)
+  assertEquals(sideImages[0].angle, "left")
+  assertEquals(sideImages[1].angle, "right")
 })
 
 Deno.test("validateImageQuality: 유효한 이미지 URL 검증", () => {

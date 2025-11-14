@@ -35,6 +35,10 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Test coverage
+coverage/
+**/coverage/
+
 # Backend folder (deprecated - now using Supabase Edge Functions)
 backend/
 skinServer/

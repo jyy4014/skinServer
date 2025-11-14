@@ -160,6 +160,8 @@ function calculateFaceDetectionScore(
     return 0.3
   }
   
+
+  
   // area_pct_by_label이 비어있거나 합이 너무 작으면 문제
   const totalAreaPct = Object.values(areaPctByLabel).reduce((sum, val) => sum + val, 0)
   if (totalAreaPct < 0.01) { // 1% 미만
@@ -217,8 +219,98 @@ function calculateFinalConfidence(
   return finalConfidence
 }
 
-// 단계 A: Vision AI 분석
+// 단계 A: Vision AI 분석 (여러 이미지 지원)
 export async function analyzeVision(
+  imageUrls: string[],
+  imageAngles: ('front' | 'left' | 'right')[],
+  userId?: string,
+  meta?: { camera?: string; orientation?: number }
+): Promise<VisionAnalysis> {
+  // 하위 호환성: 단일 이미지인 경우
+  if (imageUrls.length === 1) {
+    return analyzeVisionLegacy(imageUrls[0], userId, meta)
+  }
+
+  // 여러 이미지 분석 전략: 정면 이미지를 메인으로, 좌/우측은 보조 정보로 활용
+  const frontIndex = imageAngles.indexOf('front')
+  const frontImageUrl = frontIndex >= 0 ? imageUrls[frontIndex] : imageUrls[0]
+
+  console.log(`Analyzing ${imageUrls.length} images. Main image: ${frontImageUrl} (angle: ${imageAngles[frontIndex] || 'front'})`)
+
+  // 정면 이미지를 메인으로 분석
+  const mainAnalysis = await analyzeVisionLegacy(frontImageUrl, userId, meta)
+
+  // 좌/우측 이미지가 있으면 보조 분석 (선택적)
+  const sideImages = imageUrls
+    .map((url, index) => ({ url, angle: imageAngles[index] }))
+    .filter((item, index) => index !== frontIndex && item.angle !== 'front')
+
+  // 측면 이미지 분석 (병렬 처리, 선택적)
+  if (sideImages.length > 0) {
+    console.log(`Analyzing ${sideImages.length} side images for additional context`)
+    try {
+      const sideAnalyses = await Promise.all(
+        sideImages.map(({ url, angle }) => 
+          analyzeVisionLegacy(url, userId, meta).catch(err => {
+            console.warn(`Side image analysis failed for ${angle}:`, err)
+            return null
+          })
+        )
+      )
+
+      // 측면 분석 결과를 보조 정보로 활용 (예: 측면 주름, 색소 등)
+      const validSideAnalyses = sideAnalyses.filter(a => a !== null) as VisionAnalysis[]
+      
+      if (validSideAnalyses.length > 0) {
+        // 측면 분석 결과를 메인 분석에 통합 (가중 평균 또는 최대값)
+        mainAnalysis.skin_condition_scores = {
+          pigmentation: Math.max(
+            mainAnalysis.skin_condition_scores.pigmentation,
+            ...validSideAnalyses.map(a => a.skin_condition_scores.pigmentation)
+          ),
+          acne: Math.max(
+            mainAnalysis.skin_condition_scores.acne,
+            ...validSideAnalyses.map(a => a.skin_condition_scores.acne)
+          ),
+          redness: Math.max(
+            mainAnalysis.skin_condition_scores.redness,
+            ...validSideAnalyses.map(a => a.skin_condition_scores.redness)
+          ),
+          pores: Math.max(
+            mainAnalysis.skin_condition_scores.pores,
+            ...validSideAnalyses.map(a => a.skin_condition_scores.pores)
+          ),
+          wrinkles: Math.max(
+            mainAnalysis.skin_condition_scores.wrinkles,
+            ...validSideAnalyses.map(a => a.skin_condition_scores.wrinkles)
+          ),
+        }
+
+        // Confidence는 메인 분석과 측면 분석의 평균 (측면 정보로 신뢰도 향상)
+        const avgConfidence = (
+          mainAnalysis.confidence + 
+          validSideAnalyses.reduce((sum, a) => sum + a.confidence, 0) / validSideAnalyses.length
+        ) / 2
+        mainAnalysis.confidence = Math.min(1.0, avgConfidence * 1.1) // 측면 정보로 약간 향상
+
+        // Masks 통합 (모든 이미지의 masks 합치기)
+        mainAnalysis.masks = [
+          ...mainAnalysis.masks,
+          ...validSideAnalyses.flatMap(a => a.masks)
+        ]
+
+        console.log(`Integrated ${validSideAnalyses.length} side image analyses. Final confidence: ${(mainAnalysis.confidence * 100).toFixed(1)}%`)
+      }
+    } catch (err) {
+      console.warn("Side image analysis failed, using main analysis only:", err)
+    }
+  }
+
+  return mainAnalysis
+}
+
+// 레거시 함수 (단일 이미지 분석, 내부 사용)
+async function analyzeVisionLegacy(
   imageUrl: string,
   userId?: string,
   meta?: { camera?: string; orientation?: number }

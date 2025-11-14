@@ -34,8 +34,30 @@ Deno.serve(async (req) => {
 
     // 피부 이미지 분석 (3단계 파이프라인)
     if (path === "" && req.method === "POST") {
-      const { image_url, user_id, access_token, user_profile, meta } =
-        await req.json()
+      const { 
+        image_url,        // 하위 호환성 (단일 이미지)
+        image_urls,       // 새 형식 (3개 이미지 배열)
+        image_angles,     // 새 형식 (각 이미지의 각도)
+        user_id, 
+        access_token, 
+        user_profile, 
+        meta 
+      } = await req.json()
+
+      // 하위 호환성: image_url이 있으면 배열로 변환
+      const imageUrls = image_urls || (image_url ? [image_url] : [])
+      const imageAngles = image_angles || (image_url ? ['front'] : [])
+
+      // 유효성 검사
+      if (!imageUrls || imageUrls.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "이미지 URL이 필요합니다." }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        )
+      }
 
       // Access token으로 사용자 인증 확인
       if (access_token) {
@@ -66,7 +88,8 @@ Deno.serve(async (req) => {
              // 3단계 파이프라인 실행: A → B → C
              try {
                const result = await orchestrateAnalysis({
-                 image_url,
+                 image_urls: imageUrls,
+                 image_angles: imageAngles,
                  user_id,
                  user_profile: user_profile || {},
                  meta: meta || {},
@@ -109,7 +132,9 @@ Deno.serve(async (req) => {
     if (path === "/save" && req.method === "POST") {
       const {
         user_id,
-        image_url,
+        image_url,        // 하위 호환성 (단일 이미지)
+        image_urls,       // 새 형식 (3개 이미지 배열)
+        image_angles,     // 새 형식 (각 이미지의 각도)
         result_id,
         analysis_a,
         analysis_b,
@@ -120,6 +145,10 @@ Deno.serve(async (req) => {
         stage_metadata,
         access_token,
       } = await req.json()
+
+      // 하위 호환성: image_url이 있으면 배열로 변환
+      const imageUrls = image_urls || (image_url ? [image_url] : [])
+      const imageAngles = image_angles || (image_url ? ['front'] : [])
 
       // Access token으로 사용자 인증 확인
       const supabase = createClient(
@@ -163,7 +192,9 @@ Deno.serve(async (req) => {
         .from("skin_analysis")
         .insert({
           user_id,
-          image_url,
+          image_url: imageUrls[0] || null,  // 첫 번째 이미지를 메인으로 (하위 호환성)
+          image_urls: imageUrls,             // 새로 추가: 3개 이미지 URL 배열
+          image_angles: imageAngles,         // 새로 추가: 각 이미지의 각도
           result_summary,
           // 각 단계별 결과를 별도 컬럼에 저장
           stage_a_vision_result: analysis_a || null,
