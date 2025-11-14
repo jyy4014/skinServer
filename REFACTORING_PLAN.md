@@ -22,18 +22,23 @@
 
 ## 🎯 Phase 3 리팩토링 계획
 
-### 🔴 **우선순위 1: 레거시 코드 정리 및 마이그레이션**
+> ⚠️ **중요**: 프론트엔드(`skinfront/`)와 백엔드(`supabase/functions/`)는 **독립적으로 배포**됩니다.
+> - 프론트엔드: Vercel 배포
+> - 백엔드: Supabase Edge Functions 배포
+> - 리팩토링 시 각각의 배포 구조를 고려해야 합니다.
+
+### 🔴 **우선순위 1: 레거시 코드 정리 및 마이그레이션** ✅ 완료
 
 #### 1-1. 레거시 훅 제거
 **목표**: 사용되지 않는 레거시 코드 제거
 
 **작업 내용**:
-- [ ] `hooks/useUploadFlow.ts` 제거 (이미 `useAnalysisFlow`로 대체됨)
-- [ ] `hooks/useAnalysisHistory.ts` 제거 (이미 `lib/data/queries/analysis.ts`로 대체됨)
-- [ ] 모든 import 경로 확인 및 정리
-- [ ] 테스트에서 레거시 훅 참조 제거
+- [x] `hooks/useUploadFlow.ts` 제거 (이미 `useAnalysisFlow`로 대체됨) ✅
+- [x] `hooks/useAnalysisHistory.ts` 제거 (이미 `lib/data/queries/analysis.ts`로 대체됨) ✅
+- [x] 모든 import 경로 확인 및 정리 ✅
+- [x] 테스트에서 레거시 훅 참조 제거 ✅
 
-**예상 시간**: 1-2시간
+**예상 시간**: 1-2시간 ✅ 완료
 
 ---
 
@@ -55,16 +60,18 @@ import { useFaceDetection } from '@/app/lib/image' // 또는 별도 모듈
 ```
 
 **작업 내용**:
-- [ ] `useImageResize` → `useImageProcessor` 마이그레이션
-- [ ] `useFaceDetection` 모듈화 검토 (이미 `lib/image`에 통합 가능한지)
-- [ ] UploadForm 테스트 업데이트
-- [ ] 기능 동작 확인
+- [x] `useImageResize` → `useImageProcessor` 마이그레이션 ✅
+- [x] `useFaceDetection` 모듈화 검토 (현재 `hooks/`에 유지) ✅
+- [x] UploadForm 테스트 업데이트 ✅
+- [x] 기능 동작 확인 ✅
 
-**예상 시간**: 2-3시간
+**예상 시간**: 2-3시간 ✅ 완료
 
 ---
 
-### 🟡 **우선순위 2: UI/UX 모듈 통합**
+### 🟡 **우선순위 2: UI/UX 모듈 통합** (프론트엔드 전용)
+
+> 📍 **배포 고려사항**: 이 작업은 프론트엔드(`skinfront/`)에만 적용됩니다.
 
 #### 2-1. 로딩/에러 상태 통합 (`lib/ui/`)
 **목표**: 일관된 UI 상태 컴포넌트 제공
@@ -108,7 +115,7 @@ lib/ui/
 
 ---
 
-#### 2-2. 폼 처리 통합 (`lib/forms/`)
+#### 2-2. 폼 처리 통합 (`lib/forms/`) (프론트엔드 전용)
 **목표**: 재사용 가능한 폼 컴포넌트 및 훅 제공
 
 **현재 문제점**:
@@ -151,7 +158,12 @@ lib/forms/
 
 ### 🟢 **우선순위 3: 설정 및 타입 통합**
 
-#### 3-1. 상수 및 설정 통합 (`lib/config/`)
+> 📍 **배포 고려사항**: 
+> - 프론트엔드 설정: `skinfront/lib/config/`
+> - 백엔드 설정: `supabase/functions/_shared/config/`
+> - 공통 타입: 가능한 경우 공유, 하지만 각 배포에 독립적
+
+#### 3-1. 상수 및 설정 통합 (`lib/config/`) (프론트엔드)
 **목표**: 환경 변수 및 상수 중앙 관리
 
 **현재 문제점**:
@@ -198,7 +210,7 @@ export const ANALYSIS_CONFIG = {
 
 ---
 
-#### 3-2. 타입 정의 통합 (`types/`)
+#### 3-2. 타입 정의 통합 (`types/`) (프론트엔드)
 **목표**: 타입 중복 제거 및 완전성 향상
 
 **현재 문제점**:
