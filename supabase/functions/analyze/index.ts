@@ -59,30 +59,50 @@ Deno.serve(async (req) => {
         )
       }
 
-      // Access token으로 사용자 인증 확인
-      if (access_token) {
-        const supabase = createClient(
-          Deno.env.get("SUPABASE_URL") ?? "",
-          Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      // P0-2: 이미지 URL과 각도 배열 길이 검증
+      if (imageUrls.length !== imageAngles.length) {
+        return new Response(
+          JSON.stringify({ error: "이미지 URL과 각도 배열의 길이가 일치하지 않습니다." }),
           {
-            global: {
-              headers: { Authorization: `Bearer ${access_token}` },
-            },
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         )
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser(access_token)
-        if (authError || !user || user.id !== user_id) {
-          return new Response(
-            JSON.stringify({ error: "인증에 실패했습니다." }),
-            {
-              status: 401,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
-          )
+      }
+
+      // P1-4: Access token 필수 검증
+      if (!access_token) {
+        return new Response(
+          JSON.stringify({ error: "인증 토큰이 필요합니다." }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        )
+      }
+
+      // Access token으로 사용자 인증 확인
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+        {
+          global: {
+            headers: { Authorization: `Bearer ${access_token}` },
+          },
         }
+      )
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser(access_token)
+      if (authError || !user || user.id !== user_id) {
+        return new Response(
+          JSON.stringify({ error: "인증에 실패했습니다." }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        )
       }
 
              // 3단계 파이프라인 실행: A → B → C
@@ -150,6 +170,28 @@ Deno.serve(async (req) => {
       const imageUrls = image_urls || (image_url ? [image_url] : [])
       const imageAngles = image_angles || (image_url ? ['front'] : [])
 
+      // P0-2: 이미지 URL과 각도 배열 길이 검증
+      if (imageUrls.length !== imageAngles.length) {
+        return new Response(
+          JSON.stringify({ error: "이미지 URL과 각도 배열의 길이가 일치하지 않습니다." }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        )
+      }
+
+      // P1-4: Access token 필수 검증
+      if (!access_token) {
+        return new Response(
+          JSON.stringify({ error: "인증 토큰이 필요합니다." }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        )
+      }
+
       // Access token으로 사용자 인증 확인
       const supabase = createClient(
         Deno.env.get("SUPABASE_URL") ?? "",
@@ -161,20 +203,18 @@ Deno.serve(async (req) => {
         }
       )
 
-      if (access_token) {
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser(access_token)
-        if (authError || !user || user.id !== user_id) {
-          return new Response(
-            JSON.stringify({ error: "인증에 실패했습니다." }),
-            {
-              status: 401,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
-          )
-        }
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser(access_token)
+      if (authError || !user || user.id !== user_id) {
+        return new Response(
+          JSON.stringify({ error: "인증에 실패했습니다." }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        )
       }
 
       // NLG 결과에서 summary 추출

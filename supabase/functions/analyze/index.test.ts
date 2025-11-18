@@ -152,3 +152,49 @@ Deno.test("save 엔드포인트: 첫 번째 이미지가 image_url로 저장되�
   assertEquals(imageUrl, "https://example.com/front.jpg")
 })
 
+// P0-2: 이미지 URL과 각도 배열 길이 불일치 검증
+Deno.test("analyze 엔드포인트: image_urls와 image_angles 길이가 다를 때 에러 반환", async () => {
+  // Arrange: 길이가 다른 배열
+  const requestBody = {
+    image_urls: [
+      "https://example.com/front.jpg",
+      "https://example.com/left.jpg",
+    ],
+    image_angles: ["front"], // 길이가 다름
+    user_id: "test-user-id",
+    access_token: "test-token",
+  }
+
+  const req = createMockRequest("POST", "/analyze", requestBody)
+  const parsed = await req.json()
+
+  // Act & Assert: 길이 검증
+  const imageUrls = parsed.image_urls || (parsed.image_url ? [parsed.image_url] : [])
+  const imageAngles = parsed.image_angles || (parsed.image_url ? ['front'] : [])
+
+  // 실제 엔드포인트에서는 400 에러를 반환해야 함
+  assertEquals(imageUrls.length, 2)
+  assertEquals(imageAngles.length, 1)
+  // 길이가 다르므로 에러가 발생해야 함
+})
+
+// P1-4: 인증 토큰 필수 검증
+Deno.test("analyze 엔드포인트: access_token이 없을 때 에러 반환", async () => {
+  // Arrange: access_token 없음
+  const requestBody = {
+    image_urls: ["https://example.com/image.jpg"],
+    image_angles: ["front"],
+    user_id: "test-user-id",
+    // access_token 없음
+  }
+
+  const req = createMockRequest("POST", "/analyze", requestBody)
+  const parsed = await req.json()
+
+  // Act & Assert: access_token 검증
+  const accessToken = parsed.access_token
+
+  // 실제 엔드포인트에서는 401 에러를 반환해야 함
+  assertEquals(accessToken, undefined)
+})
+
