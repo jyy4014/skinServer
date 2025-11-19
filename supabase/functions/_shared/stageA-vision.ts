@@ -2,6 +2,7 @@
 // Deno 형식으로 변환
 
 import { encodeToBase64 } from "./utils/base64.ts"
+import { getImageMetadata, validateImageSize, checkImageOptimization } from "./utils/image-resize.ts"
 
 export interface VisionAnalysis {
   skin_condition_scores: {
@@ -32,6 +33,24 @@ export interface VisionAnalysis {
 async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
   try {
     console.log("Fetching image from URL:", imageUrl.substring(0, 100))
+    
+    // 이미지 메타데이터 확인 (크기 최적화 체크)
+    try {
+      const metadata = await getImageMetadata(imageUrl)
+      const sizeValidation = validateImageSize(metadata.size)
+      
+      if (!sizeValidation.valid) {
+        throw new Error(sizeValidation.recommendation || "이미지 크기가 너무 큽니다.")
+      }
+      
+      if (sizeValidation.recommendation) {
+        console.log("Image optimization recommendation:", sizeValidation.recommendation)
+      }
+    } catch (metadataError) {
+      // 메타데이터 확인 실패해도 계속 진행 (경고만)
+      console.warn("Failed to get image metadata, continuing anyway:", metadataError)
+    }
+    
     const response = await fetch(imageUrl)
     if (!response.ok) {
       console.error(`Failed to fetch image: ${response.status} ${response.statusText}`)
@@ -74,15 +93,22 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
     // 이미지 크기 확인 (원본 이미지 10MB 제한)
     const maxImageSize = 10 * 1024 * 1024 // 10MB
     if (arrayBuffer.byteLength > maxImageSize) {
-      throw new Error(`이미지가 너무 큽니다. (${Math.round(arrayBuffer.byteLength / 1024 / 1024)}MB) 최대 10MB까지 지원합니다.`)
+      throw new Error(`이미지가 너무 큽니다. (${Math.round(arrayBuffer.byteLength / 1024 / 1024)}MB) 최대 10MB까지 지원합니다. 클라이언트에서 리사이즈 후 다시 업로드해주세요.`)
     }
     
     // Gemini API 제한 확인 (Gemini 1.5 Pro는 최대 20MB base64 인코딩된 이미지 지원)
     // 원본 이미지 크기 확인 (base64는 약 33% 더 큼)
     const estimatedBase64Size = arrayBuffer.byteLength * 1.33
     const maxGeminiSize = 20 * 1024 * 1024 // 20MB (Gemini 1.5 Pro 제한)
+    
+    // 최적화 체크
+    const optimizationCheck = checkImageOptimization(arrayBuffer.byteLength, estimatedBase64Size)
+    if (optimizationCheck.recommendation) {
+      console.log("Image optimization:", optimizationCheck.recommendation)
+    }
+    
     if (estimatedBase64Size > maxGeminiSize) {
-      throw new Error(`이미지가 너무 큽니다. (예상 크기: ${Math.round(estimatedBase64Size / 1024 / 1024)}MB) Gemini API는 20MB 이하의 이미지만 지원합니다.`)
+      throw new Error(`이미지가 너무 큽니다. (예상 크기: ${Math.round(estimatedBase64Size / 1024 / 1024)}MB) Gemini API는 20MB 이하의 이미지만 지원합니다. 클라이언트에서 리사이즈 후 다시 업로드해주세요.`)
     }
     
     console.log(`Processing image: ${Math.round(arrayBuffer.byteLength / 1024 / 1024 * 100) / 100}MB (estimated base64: ${Math.round(estimatedBase64Size / 1024 / 1024 * 100) / 100}MB)`)

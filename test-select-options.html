@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Options 테스트</title>
+    <style>
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background-color: white;
+            color: #111827; /* text-gray-900 */
+            font-size: 16px;
+        }
+        select option {
+            color: #111827; /* text-gray-900 */
+            background-color: #ffffff;
+            padding: 8px;
+        }
+        .test-result {
+            margin-top: 20px;
+            padding: 16px;
+            background-color: #f3f4f6;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Select Options 가시성 테스트</h1>
+    
+    <div style="max-width: 400px; margin: 20px auto;">
+        <label>성별 선택:</label>
+        <select id="gender-select">
+            <option value="" style="color: #111827; background-color: #ffffff;">선택해주세요</option>
+            <option value="male" style="color: #111827; background-color: #ffffff;">남성</option>
+            <option value="female" style="color: #111827; background-color: #ffffff;">여성</option>
+            <option value="other" style="color: #111827; background-color: #ffffff;">기타</option>
+        </select>
+        
+        <div class="test-result">
+            <h3>테스트 결과:</h3>
+            <p id="result-text">Select를 클릭하여 옵션을 확인하세요.</p>
+        </div>
+    </div>
+
+    <script>
+        const select = document.getElementById('gender-select');
+        const resultText = document.getElementById('result-text');
+        
+        select.addEventListener('change', () => {
+            const selectedOption = select.options[select.selectedIndex];
+            const computedStyle = window.getComputedStyle(selectedOption);
+            
+            resultText.innerHTML = `
+                <strong>선택된 옵션:</strong> ${selectedOption.text}<br>
+                <strong>텍스트 색상:</strong> ${computedStyle.color}<br>
+                <strong>배경 색상:</strong> ${computedStyle.backgroundColor}<br>
+                <strong>가시성:</strong> ${computedStyle.color === 'rgb(17, 24, 39)' ? '✅ 정상' : '❌ 문제 있음'}
+            `;
+        });
+        
+        // 초기 상태 확인
+        const firstOption = select.options[0];
+        const firstOptionStyle = window.getComputedStyle(firstOption);
+        resultText.innerHTML = `
+            <strong>초기 옵션 색상:</strong> ${firstOptionStyle.color}<br>
+            <strong>초기 배경 색상:</strong> ${firstOptionStyle.backgroundColor}<br>
+            <strong>예상 색상:</strong> rgb(17, 24, 39) (text-gray-900)
+        `;
+    </script>
+</body>
+</html>
+
+
