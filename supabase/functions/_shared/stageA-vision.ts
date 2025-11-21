@@ -259,17 +259,30 @@ export async function analyzeVision(
 
   // 여러 이미지 분석 전략: 정면 이미지를 메인으로, 좌/우측은 보조 정보로 활용
   const frontIndex = imageAngles.indexOf('front')
+  
+  // front 이미지가 없으면 첫 번째 이미지를 사용하되, 실제 각도 정보를 로그에 표시
   const frontImageUrl = frontIndex >= 0 ? imageUrls[frontIndex] : imageUrls[0]
+  const actualFrontAngle = frontIndex >= 0 ? imageAngles[frontIndex] : (imageAngles[0] || 'front')
+  
+  if (frontIndex < 0) {
+    console.warn(`No 'front' angle found in imageAngles. Using first image as main (actual angle: ${actualFrontAngle})`)
+  }
 
-  console.log(`Analyzing ${imageUrls.length} images. Main image: ${frontImageUrl} (angle: ${imageAngles[frontIndex] || 'front'})`)
+  console.log(`Analyzing ${imageUrls.length} images. Main image: ${frontImageUrl} (angle: ${actualFrontAngle})`)
 
   // 정면 이미지를 메인으로 분석
   const mainAnalysis = await analyzeVisionLegacy(frontImageUrl, userId, meta)
 
   // 좌/우측 이미지가 있으면 보조 분석 (선택적)
+  // frontIndex가 -1이면 모든 이미지를 측면으로 처리하지 않도록 수정
   const sideImages = imageUrls
     .map((url, index) => ({ url, angle: imageAngles[index] }))
-    .filter((item, index) => index !== frontIndex && item.angle !== 'front')
+    .filter((item, index) => {
+      // frontIndex가 유효한 경우에만 frontIndex를 제외
+      if (frontIndex >= 0 && index === frontIndex) return false
+      // front 각도가 아닌 것만 측면으로 간주
+      return item.angle !== 'front'
+    })
 
   // 측면 이미지 분석 (병렬 처리, 선택적)
   if (sideImages.length > 0) {
@@ -289,26 +302,32 @@ export async function analyzeVision(
       
       if (validSideAnalyses.length > 0) {
         // 측면 분석 결과를 메인 분석에 통합 (가중 평균 또는 최대값)
+        // Math.max는 최소 2개 인자가 필요하므로, validSideAnalyses가 비어있지 않음을 확인했지만 안전하게 처리
+        const getMaxScore = (mainScore: number, sideScores: number[]): number => {
+          if (sideScores.length === 0) return mainScore
+          return Math.max(mainScore, ...sideScores)
+        }
+        
         mainAnalysis.skin_condition_scores = {
-          pigmentation: Math.max(
+          pigmentation: getMaxScore(
             mainAnalysis.skin_condition_scores.pigmentation,
-            ...validSideAnalyses.map(a => a.skin_condition_scores.pigmentation)
+            validSideAnalyses.map(a => a.skin_condition_scores.pigmentation)
           ),
-          acne: Math.max(
+          acne: getMaxScore(
             mainAnalysis.skin_condition_scores.acne,
-            ...validSideAnalyses.map(a => a.skin_condition_scores.acne)
+            validSideAnalyses.map(a => a.skin_condition_scores.acne)
           ),
-          redness: Math.max(
+          redness: getMaxScore(
             mainAnalysis.skin_condition_scores.redness,
-            ...validSideAnalyses.map(a => a.skin_condition_scores.redness)
+            validSideAnalyses.map(a => a.skin_condition_scores.redness)
           ),
-          pores: Math.max(
+          pores: getMaxScore(
             mainAnalysis.skin_condition_scores.pores,
-            ...validSideAnalyses.map(a => a.skin_condition_scores.pores)
+            validSideAnalyses.map(a => a.skin_condition_scores.pores)
           ),
-          wrinkles: Math.max(
+          wrinkles: getMaxScore(
             mainAnalysis.skin_condition_scores.wrinkles,
-            ...validSideAnalyses.map(a => a.skin_condition_scores.wrinkles)
+            validSideAnalyses.map(a => a.skin_condition_scores.wrinkles)
           ),
         }
 

@@ -33,9 +33,9 @@ BEGIN
       THEN (NEW.raw_user_meta_data->>'birth_date')::DATE 
       ELSE NULL 
     END,
-    NEW.raw_user_meta_data->>'gender',
-    NEW.raw_user_meta_data->>'phone_number',
-    COALESCE(NEW.raw_user_meta_data->>'country', 'KR'),
+    COALESCE(NEW.raw_user_meta_data->>'gender', 'prefer_not_to_say'), -- NOT NULL 제약 조건
+    COALESCE(NEW.raw_user_meta_data->>'phone_number', ''), -- NOT NULL 제약 조건
+    COALESCE(NEW.raw_user_meta_data->>'country', 'KR'), -- NOT NULL 제약 조건
     COALESCE(NEW.raw_user_meta_data->>'signup_source', 'web'),
     NOW(),
     NOW(),

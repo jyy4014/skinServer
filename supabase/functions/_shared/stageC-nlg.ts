@@ -22,6 +22,12 @@ export interface MappingResultInput {
     score: number
     expected_improvement_pct: number
     notes: string[]
+    // AI 기반 추가 필드 (Stage B에서 생성)
+    cost_range?: { min: number; max: number; currency: string }
+    frequency?: string
+    treatment_cycle?: string
+    clinical_evidence?: string
+    latest_technology?: boolean
   }>
 }
 
@@ -292,48 +298,4 @@ Output strictly JSON only (no markdown, no code blocks).
   }
 }
 
-function getTemplateNLGResult(
-  visionResult: VisionAnalysisInput,
-  mappingResult: MappingResultInput
-): NLGResult {
-  const skinSummary = generateSkinSummary(visionResult.skin_condition_scores)
-  const { confidence, uncertainty_estimate } = visionResult
-  const { treatment_candidates } = mappingResult
-
-  const headline = `${skinSummary} — 참고용 안내`
-  const paragraphs: string[] = []
-
-  paragraphs.push(
-    `이미지 분석 결과, ${skinSummary}. (신뢰도 ${Math.round(confidence * 100)}%)`
-  )
-
-  if (treatment_candidates.length > 0) {
-    const topTreatment = treatment_candidates[0]
-    paragraphs.push(
-      `비교적 자주 선택되는 옵션: ${topTreatment.name} — ${topTreatment.notes.join(", ")}. (참고: 평균 개선 기대치 약 ${Math.round(topTreatment.expected_improvement_pct * 100)}%)`
-    )
-  } else {
-    paragraphs.push(
-      "현재 피부 상태가 전반적으로 양호하여 특별한 시술 추천이 없습니다."
-    )
-  }
-
-  if (uncertainty_estimate > 0.4) {
-    paragraphs.push(
-      "전문가 검토를 고려해보세요. 본 분석 결과는 참고용이며, 정확한 진단을 위해서는 전문의 상담이 필요합니다."
-    )
-  }
-
-  paragraphs.push("본 설명은 의료 진단이 아니며, 시술 전 전문의 상담을 권장합니다.")
-
-  return {
-    headline,
-    paragraphs,
-    cta: {
-      label: "전문가 상담 요청",
-      url: "/consult",
-    },
-    nlg_version: "nlg-v1-template",
-  }
-}
 

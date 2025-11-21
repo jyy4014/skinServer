@@ -33,7 +33,7 @@ export interface OrchestrationResult {
 }
 
 export interface OrchestrationInput {
-  image_urls: string[]  // 3개 이미지 URL 배열
+  image_urls: string[]  // 이미지 URL 배열 (최소 1개, 정면 필수, 좌/우 선택사항)
   image_angles: ('front' | 'left' | 'right')[]  // 각 이미지의 각도
   user_id: string
   user_profile?: UserProfile

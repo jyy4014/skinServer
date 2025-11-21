@@ -36,8 +36,8 @@ Deno.serve(async (req) => {
     if (path === "" && req.method === "POST") {
       const { 
         image_url,        // 하위 호환성 (단일 이미지)
-        image_urls,       // 새 형식 (3개 이미지 배열)
-        image_angles,     // 새 형식 (각 이미지의 각도)
+        image_urls,       // 이미지 URL 배열 (최소 1개, 정면 필수, 좌/우 선택사항)
+        image_angles,     // 각 이미지의 각도 배열
         user_id, 
         access_token, 
         user_profile, 
@@ -153,8 +153,8 @@ Deno.serve(async (req) => {
       const {
         user_id,
         image_url,        // 하위 호환성 (단일 이미지)
-        image_urls,       // 새 형식 (3개 이미지 배열)
-        image_angles,     // 새 형식 (각 이미지의 각도)
+        image_urls,       // 이미지 URL 배열 (최소 1개, 정면 필수, 좌/우 선택사항)
+        image_angles,     // 각 이미지의 각도 배열
         result_id,
         analysis_a,
         analysis_b,
@@ -233,8 +233,8 @@ Deno.serve(async (req) => {
         .insert({
           user_id,
           image_url: imageUrls[0] || null,  // 첫 번째 이미지를 메인으로 (하위 호환성)
-          image_urls: imageUrls,             // 새로 추가: 3개 이미지 URL 배열
-          image_angles: imageAngles,         // 새로 추가: 각 이미지의 각도
+          image_urls: imageUrls,             // 이미지 URL 배열 (최소 1개, 정면 필수, 좌/우 선택사항)
+          image_angles: imageAngles,         // 각 이미지의 각도 배열
           result_summary,
           // 각 단계별 결과를 별도 컬럼에 저장
           stage_a_vision_result: analysis_a || null,

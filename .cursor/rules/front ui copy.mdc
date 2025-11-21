@@ -188,3 +188,223 @@ CTA: “전문의 상담 연결” → MVP에선 ‘관심 등록’만
 결과 표시	JSON 결과 기반 chart.js + overlay
 히스토리	Supabase DB query + infinite scroll
 저장	Supabase Storage + RLS 정책
+
+
+
+
+📄 Skin Analysis App – Full Wireframe Specification (For AI Design Model)
+1. Home Screen
+Purpose: Show summary of today’s skin condition and lead user to scan.
+
+Layout:
+Header: App logo or “Today’s Skin Report”
+
+Section: Overall Skin Score
+
+Circular score indicator (0~100)
+
+“Compared to yesterday: +3”
+
+Quick Actions (3 buttons):
+
+“Take Skin Photo”
+
+“View Analysis History”
+
+“AI Skin Coach”
+
+AI Recommendations Section:
+
+“Recommended Routine Today”
+
+Items: current risk areas (e.g., sebum, redness, pores)
+
+Button: “View tips”
+
+Recent Analysis Summary:
+
+7-day trend mini line graph
+
+3 recent analysis thumbnails with dates
+
+2. Camera Screen
+Purpose: Help user take accurate skin photo.
+
+Layout:
+Header: “Skin Scan”
+
+Full-screen Camera Preview
+
+Face detection guide outline (oval)
+
+Lighting warning: “Lighting is too dark”
+
+Distance warning: “Move back slightly”
+
+Bottom controls:
+
+Center large circular shutter button
+
+Left: open gallery
+
+Right: switch camera
+
+After Capture:
+Full image preview
+
+Problem regions auto-highlight (dotted areas)
+
+Buttons:
+
+“Retake”
+
+“Start AI Analysis”
+
+3. AI Result Screen
+Purpose: Present AI analysis in clear medical-report style.
+
+Layout:
+Header: “Analysis Result”
+
+Section: Overall Score
+
+Score: e.g., 78/100
+
+One-line summary: e.g., “Improvement possible in pores and pigmentation”
+
+Image Highlight Section:
+
+Original photo
+
+Highlighted issue areas (acne, redness, pigmentation)
+
+Detailed Metrics (Card List):
+
+Pores: Medium (Shows improvement trend)
+
+Skin tone uniformity: Low
+
+Sebum level: High
+
+Wrinkles/elasticity: Normal
+
+Redness: High
+
+Pigmentation: Increasing trends
+
+AI Recommendation Preview:
+
+“Clinic treatment recommendations”
+
+“Cosmetic product routine”
+
+4. Clinic Treatment Recommendation Screen
+Purpose: Recommend dermatology treatments based on AI analysis.
+
+Treatment Card Structure:
+Pores / Sebum
+
+Treatment: Pico Laser + LDM
+
+Effects: tighten pores, reduce oil
+
+Frequency: weekly × 4 weeks
+
+Estimated cost: ₩100,000~200,000
+
+Button: “Find a nearby clinic”
+
+Pigmentation / Dark Spots
+
+Treatment: IPL Laser
+
+Effects: tone brightening, spot reduction
+
+Cost: ₩70,000~150,000
+
+Redness / Vascular Issues
+
+Treatment: V-Beam Laser
+
+Effects: redness reduction
+
+Recommended for “high redness score”
+
+5. Cosmetic Recommendation Screen
+Purpose: Product recommendations based on skin analysis + ingredients.
+
+Product Card Structure:
+Calming / Redness Control
+
+Product: CICA Calming Cream
+
+Key ingredients: Madecassoside, Panthenol
+
+Reason: High redness score
+
+Button: Purchase Link
+
+Pores / Sebum Care
+
+Product: BHA 2% Toner
+
+Key ingredient: Salicylic Acid
+
+Reason: Excess sebum & enlarged pores
+
+Brightening
+
+Product: Vitamin C Serum
+
+Ingredient: LAA 5~10%
+
+Reason: Pigmentation increase detected
+
+6. History Screen
+Purpose: Track improvement and compare past photos.
+
+Layout:
+List of analysis dates with scores:
+
+11/19 – 78
+
+11/12 – 72
+
+11/05 – 68
+
+Before/After comparison slider
+
+Left: past
+
+Right: current
+
+Movable slider bar
+
+Trend Graphs:
+
+Pore reduction %
+
+Tone uniformity change
+
+Redness decrease
+
+7. Settings Screen
+Items:
+Profile
+
+Set skin type
+
+Manage AI analysis history
+
+Notifications
+
+Language
+
+Premium subscription
+
+Privacy settings
+
+Auto-delete original photos
+
+Log out
+
